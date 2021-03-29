@@ -14,6 +14,11 @@ import matplotlib
 import math
 import matplotlib.pyplot as plt
 
+def forward2(m, M):
+    FORWARD = np.random.random([128, 6])
+    # f = np.ones([M, len(m)]) * 2
+    return np.dot(FORWARD, pow(m,0.5))
+
 def intensity(E):
     Econj = np.conj(E)
     I = np.sum(E*Econj, axis=-1)
@@ -295,9 +300,6 @@ class layersample:
         # return the electric field
         return np.moveaxis(E, 0, -1)
 
-# This sample code produces a field similar to Figure 2 in Davis et al., 2010
-# m is 16-dim vector meaning refractive indexes for each layers.
-# M is the dimension needed for observed data.
 def forward(m, M):
     # set the material properties
     z_pos = [-100, 50]
@@ -339,41 +341,39 @@ def jacobian(m_cur, dm):
         for i in range(M):
             J_cur[i][j] = (F_nxt[i] - F_cur[i]) / (m_nxt[j] - m_cur[j])
             # J_cur[i][j] = (F_nxt[i] - F_cur[i]) / (m_nxt[j] - m_cur[j]) * (m_cur[j]/F_cur[i])
-            # J_cur[i][j] = (F_nxt[i] - F_cur[i]) / (m_nxt[j] - m_cur[j]) * (m_cur[j]/F_cur[i])
-    # if np.max(np.abs(J_cur)) != 0:
-    #     J_cur = J_cur / np.max(np.abs(J_cur))
-    return J_cur, W
+    return J_cur
 
 # M is the dimension of observed data.
 # N is the dimension of expected model parameters.
 M = 128
 N = 6
-# dm = 0.001
 dm = 0.00001
 # Initialize a vector of model parameters.
-# m0 = np.ones(N, dtype='float')
-m0 = np.ones(6, dtype='float')
-E = forward(m0, M)
+m0 = np.ones(N, dtype='float')
+
 # Read d_obs from "d_real.txt" with dimension 512.
-d_obs = []
-with open("d_obs.txt", "r") as f:
-    raw_data = f.readlines()
-for line in raw_data:
-    line = float(line.strip())
-    d_obs.append(line)
-d_obs = np.array(d_obs)
+# d_obs = []
+# with open("d_obs.txt", "r") as f:
+#     raw_data = f.readlines()
+# for line in raw_data:
+#     line = float(line.strip())
+#     d_obs.append(line)
+# d_obs = np.array(d_obs)
+
+# Generate real data from forward model.
+m_gt = np.array([0.5,2,1.4,0.2,1,0.2])
+d_obs = forward(m_gt, M)
 
 # Set the Lagrange multiplier u.
 U = 1000
+# Ignore diagonal matrix W.
+W = np.identity(M)
 
 # Define matrix \alpha.
 alpha = np.zeros((N, N), dtype='float')
 for i in range(1, N):
     alpha[i][i-1] = -1
     alpha[i][i] = 1
-
-# Ignore diagonal matrix W.
-W = np.identity(M)
 
 # Create inverse model.
 rms = 100
@@ -383,8 +383,8 @@ m_cur = m0.copy()
 d_cur = d_obs.copy()
 while rms > 0.01:
     # Calculate Jacobian matrix J. Component by component.
-    J_cur, W = jacobian(m_cur, dm)
-    loss_u = 10
+    J_cur = jacobian(m_cur, dm)
+    loss_u = 100
     # Select proper u in [-1000, 1000].
     for u_i in np.linspace(1, U, 100):
         m_cur_i = np.dot(np.linalg.inv(u_i * np.dot(alpha.T, alpha) + np.dot(np.dot(W, J_cur).T, np.dot(W, J_cur))),
@@ -396,7 +396,6 @@ while rms > 0.01:
             J_r = J_cur
             loss_u = loss_u_i
             u = u_i
-            # print('u= ' + str(u))
             m_temp = m_cur_i.copy()
             d_cur = d_cur_i.copy()
     m_cur = m_temp
@@ -410,13 +409,19 @@ while rms > 0.01:
     loss.append(np.linalg.norm(d_cur-d_obs))
     
     num += 1
-    print('RMS for the current iteration: ' + str(rms) + '.')
-    print('The predicted refractive index for layered medium: ' + str(m_cur) + '.')
-    print('Number of iterations: ' + str(num) + '.')
-    print('The curret loss: ' + str(loss) + '.')
+    # print('RMS for the current iteration: ' + str(rms) + '.')
+    # print('The predicted refractive index for layered medium: ' + str(m_cur) + '.')
+    # print('Number of iterations: ' + str(num) + '.')
+    # print('The curret loss: ' + str(loss) + '.')
 
     if num > 100:
         break
+
+print('RMS for the current iteration: ' + str(rms) + '.')
+print('The predicted refractive index for layered medium: ' + str(m_cur) + '.')
+print('Number of iterations: ' + str(num) + '.')
+print('The curret loss: ' + str(loss) + '.')
+
 x_0 = np.linspace(-100, 50, N).tolist()
 y_0 = m_cur.tolist()
 for i in range(N-1):
