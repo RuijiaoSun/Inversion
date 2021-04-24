@@ -297,19 +297,18 @@ def generate(m, M):
     layers = layersample(m, depths)
 
     # set the input light parameters
-    d = np.array([0, 0])  # direction of propagation of the plane wave
-
+    d = np.array([0.7, 0])      # direction of propagation of the plane wave
+    E0 = [0.7, 0, -0.7]            # specify the E vector
+    E1 = orthogonalize(E0, d)   # make sure that both vectors are orthogonal
     # d = d / np.linalg.norm(d)                           #normalize this direction vector
-    l0 = 14 # specify the wavelength in free-space
-    k0 = 2 * np.pi / l0  # calculate the wavenumber in free-space
-    E_o = []
+    l0 = 100 # specify the wavelength in free-space # calculate the wavenumber in free-space
+    lout = []
     data = []
-    for e in range(M):
-        E0 = np.random.rand(3)
-        # E0 = [0.7, 0, 0]  # specify the E vector
-        E1 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
+    for i in range(M):
+        l = l0 * float((i+1)/M)
+        k = 2 * np.pi / l
         # solve for the substrate field
-        layers.solve1(d, k0, E1)
+        layers.solve1(d, k, E1)
         # set the simulation domain
         N = M
         D = [z_pos[0], z_pos[1]+30, 0, 0.5 * (z_pos[1] - z_pos[0])]
@@ -320,11 +319,11 @@ def generate(m, M):
         E = layers.evaluate(X, Y, Z)
         Er = np.real(E)
         I = intensity(Er)
-        E_o.append(E0.tolist())
-        data.append(I[-1, 0])
-    return E_o, data
+        lout.append(l)
+        data.append(np.max(I[-1, :]))
+    return lout, data
 
-def forward(E_in, m, M):
+def forward(lin, m, M):
     # set the material properties
     z_pos = [-100, 50]
     depths = np.linspace(z_pos[0], z_pos[1], len(m))  # specify the refractive indices of each layer
@@ -332,18 +331,18 @@ def forward(E_in, m, M):
     layers = layersample(m, depths)
 
     # set the input light parameters
-    d = np.array([0, 0])  # direction of propagation of the plane wave
+    d = np.array([0.7, 0])  # direction of propagation of the plane wave
+    E0 = [0.7, 0, -0.7]
+    E1 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
 
     # d = d / np.linalg.norm(d)                           #normalize this direction vector
-    l0 = 14 # specify the wavelength in free-space
-    k0 = 2 * np.pi / l0  # calculate the wavenumber in free-space
+    l0 = 30 # specify the wavelength in free-space
     data = []
     for i in range(M):
-        E0 = E_in[i]  # specify the E vector
-        E1 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
+        l = lin[i]
         # solve for the substrate field
-
-        layers.solve1(d, k0, E1)
+        k = 2 * np.pi / l  # calculate the wavenumber in free-space
+        layers.solve1(d, k, E1)
         # set the simulation domain
         N = M
         D = [z_pos[0], z_pos[1]+30, 0, 0.5 * (z_pos[1] - z_pos[0])]
@@ -354,35 +353,36 @@ def forward(E_in, m, M):
         E = layers.evaluate(X, Y, Z)
         Er = np.real(E)
         I = intensity(Er)
-        data.append(I[-1, 0])
+        # data.append(np.max(I[-1, :]))
+        data.append(I[-1, :])
     return data
 
-def jacobian(E_in, m_cur, dm):
+def jacobian(l_in, m_cur, dm):
     J_cur = np.zeros((M, N), dtype='float')
-    F_cur = forward(E_in, m_cur, M)
+    F_cur = forward(l_in, m_cur, M)
     for j in range(N):
         m_nxt = m_cur.copy()
-        m_nxt[j] += dm
-        F_nxt = forward(E_in, m_nxt, M)
-        # F_nxt_mean = np.mean(F_nxt)
-        for i in range(M):
-            J_cur[i][j] = (F_nxt[i] - F_cur[i]) / dm
+        m_nxt[j] += dm * m_nxt[j]
+        F_nxt = np.array(forward(l_in, m_nxt, M))
+        J_cur[:, j] = (F_nxt - F_cur) / dm
+        J_max = np.max(abs(J_cur[:, j]))
+        # J_cur[:, j] = J_cur[:,j] / J_max
             # J_cur[i][j] = (F_nxt[i] - F_cur[i]) / (m_nxt[j] - m_cur[j]) * (m_cur[j]/F_cur[i])
     return J_cur
 
 
 # M is the dimension of observed data.
 # N is the dimension of expected model parameters.
-M = 32
-N = 4
-dm = 0.00001
+M = 128
+N = 16
+dm = 0.001
 # Initialize a vector of model parameters.
-# m0 = np.ones(N, dtype='float') * 1.5
-m0 = np.array([1, 1.5, 1.5, 1])
+m0 = np.ones(N, dtype='float') * 1.2
+# m0 = np.array([1.4, 1.4, 1.4, 1.4, 1.0, 1.0]*2)
 
 # Generate real data from forward model.
-m_gt = np.array([1, 1.2, 1.5, 1])
-E_in, d_obs = generate(m_gt, M)
+m_gt = np.array([1.0, 1.4, 1.2])
+l_in, d_obs = generate(m_gt, M)
 d_obs = np.array(d_obs)
 
 # Set the Lagrange multiplier u.
@@ -402,17 +402,20 @@ num = 0
 loss = []
 m_cur = m0.copy()
 d_cur = d_obs.copy()
-while rms > 0.00001:
+while rms > 0.0001:
     # Calculate Jacobian matrix J. Component by component.
-    J_cur = jacobian(E_in, m_cur, dm)
-    loss_u = 20
+    J_cur = jacobian(l_in, m_cur, dm)
+    loss_u = 200
+    # m_cur = np.dot(np.linalg.inv(0.001 * np.dot(alpha.T, alpha) + np.dot(np.dot(W, J_cur).T, np.dot(W, J_cur))),
+    #                      np.dot(np.dot(W, J_cur).T, np.dot(W, (d_obs - forward(l_in, m_cur, M) + np.dot(J_cur, m_cur)))))
+
     # Select proper u in [-1000, 1000].
-    for u_i in np.linspace(0, U, 10):
+    for u_i in np.linspace(0.000001, 5, 10):
         m_cur_i = np.dot(np.linalg.inv(u_i * np.dot(alpha.T, alpha) + np.dot(np.dot(W, J_cur).T, np.dot(W, J_cur))),
-                         np.dot(np.dot(W, J_cur).T, np.dot(W, (d_obs - forward(E_in, m_cur, M) + np.dot(J_cur, m_cur)))))
+                         np.dot(np.dot(W, J_cur).T, np.dot(W, (d_obs - forward(l_in, m_cur, M) + np.dot(J_cur, m_cur)))))
         # m_cur_i[m_cur_i<0] = -m_cur_i[m_cur_i<0]
-        d_cur_i = forward(E_in, m_cur_i, M)
-        loss_u_i = np.sum(np.abs(d_cur_i-d_obs))
+        d_cur_i = forward(l_in, m_cur_i, M)
+        loss_u_i = np.linalg.norm(W * d_obs - W * d_cur_i)
         if loss_u_i < loss_u:
             J_r = J_cur
             loss_u = loss_u_i
@@ -420,18 +423,18 @@ while rms > 0.00001:
             m_temp = m_cur_i.copy()
             d_cur = d_cur_i.copy()
     print(u)
-    m_cur = m_temp
+    m_cur = m_temp.copy()
+    print(m_cur)
     # m_cur = np.dot(np.linalg.inv(u * np.dot(alpha.T, alpha) + np.dot(np.dot(W, J_cur).T, np.dot(W, J_cur))), np.dot(np.dot(W, J_cur).T, np.dot(W, d_cur)))
-    # m_cur[m_cur<0] = -m_cur[m_cur<0]
-    # d_cur = forward(m_cur, M)
+    d_cur = forward(l_in, m_cur, M)
     X_nxt = np.linalg.norm(W * d_obs - W * d_cur)
     rms = np.sqrt(pow(X_nxt, 2) / M)
 
     # Calculate loss for each iteration.
-    loss.append(np.sum(np.abs(d_cur_i-d_obs)))
+    loss.append(np.sum(np.abs(d_cur-d_obs)))
 
     num += 1
-    if num > 5:
+    if num > 6:
         break
 
 print('RMS for the current iteration: ' + str(rms) + '.')
