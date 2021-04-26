@@ -302,7 +302,7 @@ class layersample:
 
 def forward(m, M):
     # set the material properties
-    z_pos = [-100, 50]
+    z_pos = [-10, 5]
     depths = np.linspace(z_pos[0], z_pos[1], len(m))  # specify the refractive indices of each layer
     # create a layered sample
     layers = layersample(m, depths)
@@ -311,7 +311,7 @@ def forward(m, M):
     d = np.array([0.7, 0])  # direction of propagation of the plane wave
 
     # d = d / np.linalg.norm(d)                           #normalize this direction vector
-    l0 = 5  # specify the wavelength in free-space
+    l0 = 5 # specify the wavelength in free-space
     k0 = 2 * np.pi / l0  # calculate the wavenumber in free-space
     E0 = [0.7, 0, 0]  # specify the E vector
     E0 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
@@ -320,7 +320,37 @@ def forward(m, M):
     layers.solve1(d, k0, E0)
     # set the simulation domain
     N = M
-    D = [z_pos[0], z_pos[1] + 10, 0, 0.5 * (z_pos[1] - z_pos[0])]
+    D = [z_pos[0], z_pos[1]+3, 0, 0.5 * (z_pos[1] - z_pos[0])]
+    x = np.linspace(D[2], D[3], N)
+    z = np.linspace(D[0], D[1], M)
+    [X, Z] = np.meshgrid(x, z)
+    Y = np.ones(X.shape) * 50
+    E = layers.evaluate(X, Y, Z)
+    Er = np.real(E)
+    I = intensity(Er)
+    return I[:, 0]
+
+def forward_2(m, M):
+    # set the material properties
+    z_pos = [-10, 5]
+    depths = np.linspace(z_pos[0], z_pos[1], len(m))  # specify the refractive indices of each layer
+    # create a layered sample
+    layers = layersample(m, depths)
+
+    # set the input light parameters
+    d = np.array([0, 0])  # direction of propagation of the plane wave
+
+    # d = d / np.linalg.norm(d)                           #normalize this direction vector
+    l0 = 5  # specify the wavelength in free-space
+    k0 = 2 * np.pi / l0  # calculate the wavenumber in free-space
+    E0 = [1, 0, 0]  # specify the E vector
+    E0 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
+    # solve for the substrate field
+
+    layers.solve1(d, k0, E0)
+    # set the simulation domain
+    N = M
+    D = [z_pos[0], z_pos[1] + 3, 0, 0.5 * (z_pos[1] - z_pos[0])]
     x = np.linspace(D[2], D[3], N)
     z = np.linspace(D[0], D[1], M)
     [X, Z] = np.meshgrid(x, z)
@@ -345,11 +375,11 @@ def jacobian(m_cur, dm):
 
 # M is the dimension of observed data.
 # N is the dimension of expected model parameters.
-M = 128
+M = 32
 N = 6
-dm = 0.00001
+dm = 0.000001
 # Initialize a vector of model parameters.
-m0 = np.ones(N, dtype='float')
+m0 = np.ones(N, dtype='float') * 1
 
 # Read d_obs from "d_real.txt" with dimension 512.
 # d_obs = []
@@ -361,11 +391,11 @@ m0 = np.ones(N, dtype='float')
 # d_obs = np.array(d_obs)
 
 # Generate real data from forward model.
-m_gt = np.array([0.5,2,1.4,0.2,1,0.2])
+m_gt = np.array([1, 1.2, 1.6, 1.1, 1.5, 1])
 d_obs = forward(m_gt, M)
 
 # Set the Lagrange multiplier u.
-U = 1000
+U = 500
 # Ignore diagonal matrix W.
 W = np.identity(M)
 
@@ -381,10 +411,10 @@ num = 0
 loss = []
 m_cur = m0.copy()
 d_cur = d_obs.copy()
-while rms > 0.01:
+while rms > 0.005:
     # Calculate Jacobian matrix J. Component by component.
     J_cur = jacobian(m_cur, dm)
-    loss_u = 100
+    loss_u = 5
     # Select proper u in [-1000, 1000].
     for u_i in np.linspace(1, U, 100):
         m_cur_i = np.dot(np.linalg.inv(u_i * np.dot(alpha.T, alpha) + np.dot(np.dot(W, J_cur).T, np.dot(W, J_cur))),
@@ -409,12 +439,7 @@ while rms > 0.01:
     loss.append(np.linalg.norm(d_cur-d_obs))
     
     num += 1
-    # print('RMS for the current iteration: ' + str(rms) + '.')
-    # print('The predicted refractive index for layered medium: ' + str(m_cur) + '.')
-    # print('Number of iterations: ' + str(num) + '.')
-    # print('The curret loss: ' + str(loss) + '.')
-
-    if num > 100:
+    if num > 50:
         break
 
 print('RMS for the current iteration: ' + str(rms) + '.')
@@ -422,20 +447,22 @@ print('The predicted refractive index for layered medium: ' + str(m_cur) + '.')
 print('Number of iterations: ' + str(num) + '.')
 print('The curret loss: ' + str(loss) + '.')
 
-x_0 = np.linspace(-100, 50, N).tolist()
-y_0 = m_cur.tolist()
+x_0 = np.linspace(-10, 5, N).tolist()
+y_0 = m_gt.tolist()
+y_m = m_cur.tolist()
 for i in range(N-1):
     x_0.insert(2*i+1, x_0[2*i+1])
     y_0.insert(2*i, y_0[2*i])
+    y_m.insert(2*i, y_m[2*i])
+plt.plot(loss)
+plt.title("Loss")
+plt.show()
 plt.figure()
 plt.plot(x_0, y_0, 'b-')
-plt.xlabel("depths in medium")
+plt.plot(x_0, y_m, 'r--')
+plt.xlabel("depths in z axis")
 plt.ylabel("refractive index")
-plt.title('predicted refractive index for layered medium')
-plt.figure()
-plt.plot(loss, 'r--')
-plt.title('loss varying with each iteration')
+plt.title("Guess for model parameters")
 plt.show()
-
 
 

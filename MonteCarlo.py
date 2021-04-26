@@ -325,28 +325,46 @@ def forward(m, M):
 # M is the dimension of observed data.
 # N is the dimension of expected model parameters.
 M = 128
-N = 4
+N = 6
 
 # Generate real data from forward model.
-m_gt = np.array([1, 1.2, 1.6, 1.1])
+m_gt = np.array([1, 1.2, 1.6, 1.1, 1.5, 1])
 d_obs = forward(m_gt, M)
 
 # Initialize a vector of model parameters.
 m_cur = np.ones(N, dtype='float')
 d_cur = forward(m_cur, M)
-loss_cur = np.dot((d_obs - d_cur).T, d_obs - d_cur)
+loss_cur = []
+loss_cur.append(np.dot((d_obs - d_cur).T, d_obs - d_cur))
 
 num = 0
 while num < 10000:
     m = 1 + np.random.rand(N)
     d = forward(m, M)
     loss = np.dot((d_obs - d).T, d_obs - d)
-    if loss < loss_cur:
+    if loss < loss_cur[-1]:
         m_cur = m
-        loss_cur = loss
+        loss_cur.append(loss)
     num += 1
-print("Loss: " + str(loss_cur) + ".")
-print(m_cur)
-plt.plot(m_cur)
-plt.title("Predicted model parameters")
+
+print('The predicted refractive index for layered medium: ' + str(m_cur) + '.')
+print('The curret loss: ' + str(loss_cur) + '.')
+
+x_0 = np.linspace(-100, 50, N).tolist()
+y_0 = m_gt.tolist()
+y_m = m_cur.tolist()
+for i in range(N-1):
+    x_0.insert(2*i+1, x_0[2*i+1])
+    y_0.insert(2*i, y_0[2*i])
+    y_m.insert(2*i, y_m[2*i])
+print("Loss: " + str(d_obs- forward(m,M)) + ".")
+plt.plot(loss_cur)
+plt.title("Loss")
+plt.show()
+plt.figure()
+plt.plot(x_0, y_0, 'b-')
+plt.plot(x_0, y_m, 'r--')
+plt.xlabel("depths in z axis")
+plt.ylabel("refractive index")
+plt.title("Guess for model parameters")
 plt.show()

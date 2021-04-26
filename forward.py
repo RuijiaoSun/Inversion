@@ -313,19 +313,19 @@ def example_layer(n, M, filename):
     layers = layersample(n, depths)
     
     #set the input light parameters
-    d = np.array([0.7, 0])                             #direction of propagation of the plane wave
+    d = np.array([1, 0])                             #direction of propagation of the plane wave
     
     #d = d / np.linalg.norm(d)                           #normalize this direction vector
     l0 = 5                                              #specify the wavelength in free-space         
     k0 = 2 * np.pi / l0                              #calculate the wavenumber in free-space
-    E0 = [0.7, 0, 0]                                      #specify the E vector
+    E0 = [0.7, 0, -0.7]                                      #specify the E vector
     E0 = orthogonalize(E0, d)                           #make sure that both vectors are orthogonal
     #solve for the substrate field
     
     layers.solve1(d, k0, E0)
     #set the simulation domain
     N = M
-    D = [z_pos[0], z_pos[1]+10, 0, 0.5*(z_pos[1]-z_pos[0])]
+    D = [z_pos[0], z_pos[1]+50, 0, 0.5*(z_pos[1]-z_pos[0])]
     x = np.linspace(D[2], D[3], N)
     z = np.linspace(D[0], D[1], M)
     [X, Z] = np.meshgrid(x, z)
@@ -333,6 +333,7 @@ def example_layer(n, M, filename):
     E = layers.evaluate(X, Y, Z)
     Er = np.real(E)
     I = intensity(Er)
+    print(np.average(I[-1,:]))
     # Write result to .txt file.
     with open(filename, "w") as f:
         for i in range(N):
@@ -359,4 +360,4 @@ def example_layer(n, M, filename):
 filename = 'd_obs.txt'
 
 # example_layer(np.array([1,1.1,1.2,1.3,1.3,1.2]), 16, filename)
-example_layer(np.array([1,1.4,1.4,1.4,1,1]), 128, filename)
+example_layer(np.array([1,2,2,1.5]), 64, filename)

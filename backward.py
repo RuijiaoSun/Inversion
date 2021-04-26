@@ -297,33 +297,37 @@ def generate(m, M):
     layers = layersample(m, depths)
 
     # set the input light parameters
-    d = np.array([0.7, 0])      # direction of propagation of the plane wave
+    # d = np.array([0.7, 0])      # direction of propagation of the plane wave
     E0 = [0.7, 0, -0.7]            # specify the E vector
-    E1 = orthogonalize(E0, d)   # make sure that both vectors are orthogonal
     # d = d / np.linalg.norm(d)                           #normalize this direction vector
-    l0 = 100 # specify the wavelength in free-space # calculate the wavenumber in free-space
-    lout = []
+    l0 = 2 # specify the wavelength in free-space # calculate the wavenumber in free-space
+    Eout = []
     data = []
+    data_vector = np.linspace(0.3, 0.5, M)
     for i in range(M):
-        l = l0 * float((i+1)/M)
-        k = 2 * np.pi / l
+        # E0 = [np.random.rand()*2, 0, 0]
+        # E1 = orthogonalize(E0, d)
+        d = np.array([data_vector[i], 0])
+        E1 = orthogonalize(E0, d)   # make sure that both vectors are orthogonal
+        k = 2 * np.pi / l0
         # solve for the substrate field
         layers.solve1(d, k, E1)
         # set the simulation domain
-        N = M
+        N = 512
         D = [z_pos[0], z_pos[1]+30, 0, 0.5 * (z_pos[1] - z_pos[0])]
         x = np.linspace(D[2], D[3], N)
-        z = np.linspace(D[0], D[1], M)
+        z = np.linspace(D[0], D[1], N)
         [X, Z] = np.meshgrid(x, z)
         Y = np.ones(X.shape) * 50
         E = layers.evaluate(X, Y, Z)
         Er = np.real(E)
         I = intensity(Er)
-        lout.append(l)
+        Eout.append(d)
         data.append(np.max(I[-1, :]))
-    return lout, data
+        # data.append(np.average(I[-1, :]))
+    return Eout, data
 
-def forward(lin, m, M):
+def forward(Ein, m, M):
     # set the material properties
     z_pos = [-100, 50]
     depths = np.linspace(z_pos[0], z_pos[1], len(m))  # specify the refractive indices of each layer
@@ -331,30 +335,30 @@ def forward(lin, m, M):
     layers = layersample(m, depths)
 
     # set the input light parameters
-    d = np.array([0.7, 0])  # direction of propagation of the plane wave
+    # d = np.array([0.7, 0])  # direction of propagation of the plane wave
     E0 = [0.7, 0, -0.7]
-    E1 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
-
     # d = d / np.linalg.norm(d)                           #normalize this direction vector
-    l0 = 30 # specify the wavelength in free-space
+    l0 = 2 # specify the wavelength in free-space
     data = []
     for i in range(M):
-        l = lin[i]
+        d = Ein[i]
+        E1 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
+        # E1 = orthogonalize(E0, d)
         # solve for the substrate field
-        k = 2 * np.pi / l  # calculate the wavenumber in free-space
+        k = 2 * np.pi / l0  # calculate the wavenumber in free-space
         layers.solve1(d, k, E1)
         # set the simulation domain
-        N = M
+        N = 512
         D = [z_pos[0], z_pos[1]+30, 0, 0.5 * (z_pos[1] - z_pos[0])]
         x = np.linspace(D[2], D[3], N)
-        z = np.linspace(D[0], D[1], M)
+        z = np.linspace(D[0], D[1], N)
         [X, Z] = np.meshgrid(x, z)
         Y = np.ones(X.shape) * 50
         E = layers.evaluate(X, Y, Z)
         Er = np.real(E)
         I = intensity(Er)
-        # data.append(np.max(I[-1, :]))
-        data.append(I[-1, :])
+        data.append(np.max(I[-1, :]))
+        # data.append(np.average(I[-1, :]))
     return data
 
 def jacobian(l_in, m_cur, dm):
@@ -362,7 +366,10 @@ def jacobian(l_in, m_cur, dm):
     F_cur = forward(l_in, m_cur, M)
     for j in range(N):
         m_nxt = m_cur.copy()
-        m_nxt[j] += dm * m_nxt[j]
+        if m_nxt[j] == 0:
+            m_nxt[j] = dm * dm
+        else:
+            m_nxt[j] += dm * m_nxt[j]
         F_nxt = np.array(forward(l_in, m_nxt, M))
         J_cur[:, j] = (F_nxt - F_cur) / dm
         J_max = np.max(abs(J_cur[:, j]))
@@ -373,17 +380,19 @@ def jacobian(l_in, m_cur, dm):
 
 # M is the dimension of observed data.
 # N is the dimension of expected model parameters.
-M = 128
+M = 64
 N = 16
 dm = 0.001
 # Initialize a vector of model parameters.
-m0 = np.ones(N, dtype='float') * 1.2
-# m0 = np.array([1.4, 1.4, 1.4, 1.4, 1.0, 1.0]*2)
+m0 = np.ones(N, dtype='float') * 1.1
 
 # Generate real data from forward model.
-m_gt = np.array([1.0, 1.4, 1.2])
+m_gt = np.array([1.0,1.0,1.0,1.0,1.0, 1.4, 1.4, 1.4, 1.4, 1.4, 1.4, 1.0,1.0,1.0,1.0,1.0])
 l_in, d_obs = generate(m_gt, M)
 d_obs = np.array(d_obs)
+
+plt.plot(np.real(d_obs))
+plt.show()
 
 # Set the Lagrange multiplier u.
 U = 0.0000000001
@@ -410,7 +419,8 @@ while rms > 0.0001:
     #                      np.dot(np.dot(W, J_cur).T, np.dot(W, (d_obs - forward(l_in, m_cur, M) + np.dot(J_cur, m_cur)))))
 
     # Select proper u in [-1000, 1000].
-    for u_i in np.linspace(0.000001, 5, 10):
+    for u_log_i in np.linspace(-5, 2, 100):
+        u_i = 10 ** u_log_i
         m_cur_i = np.dot(np.linalg.inv(u_i * np.dot(alpha.T, alpha) + np.dot(np.dot(W, J_cur).T, np.dot(W, J_cur))),
                          np.dot(np.dot(W, J_cur).T, np.dot(W, (d_obs - forward(l_in, m_cur, M) + np.dot(J_cur, m_cur)))))
         # m_cur_i[m_cur_i<0] = -m_cur_i[m_cur_i<0]
@@ -433,8 +443,26 @@ while rms > 0.0001:
     # Calculate loss for each iteration.
     loss.append(np.sum(np.abs(d_cur-d_obs)))
 
+    x_0 = np.linspace(-10, 5, N).tolist()
+    y_0 = m_gt.tolist()
+    y_m = m_cur.tolist()
+    for i in range(N - 1):
+        x_0.insert(2 * i + 1, x_0[2 * i + 1])
+        y_0.insert(2 * i, y_0[2 * i])
+        y_m.insert(2 * i, y_m[2 * i])
+    plt.plot(loss)
+    plt.title("Loss")
+    plt.show()
+    plt.figure()
+    plt.plot(x_0, y_0, 'b-')
+    plt.plot(x_0, y_m, 'r--')
+    plt.xlabel("depths in z axis")
+    plt.ylabel("refractive index")
+    plt.title("Guess for model parameters")
+    plt.show()
+
     num += 1
-    if num > 6:
+    if num > 20:
         break
 
 print('RMS for the current iteration: ' + str(rms) + '.')

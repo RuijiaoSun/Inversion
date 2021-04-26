@@ -294,7 +294,7 @@ class layersample:
 
 def forward(m, M):
     # set the material properties
-    z_pos = [-100, 50]
+    z_pos = [-10, 5]
     depths = np.linspace(z_pos[0], z_pos[1], len(m))  # specify the refractive indices of each layer
     # create a layered sample
     layers = layersample(m, depths)
@@ -303,7 +303,7 @@ def forward(m, M):
     d = np.array([0.7, 0])  # direction of propagation of the plane wave
 
     # d = d / np.linalg.norm(d)                           #normalize this direction vector
-    l0 = 50  # specify the wavelength in free-space
+    l0 = 40  # specify the wavelength in free-space
     k0 = 2 * np.pi / l0  # calculate the wavenumber in free-space
     E0 = [0.7, 0, 0]  # specify the E vector
     E0 = orthogonalize(E0, d)  # make sure that both vectors are orthogonal
@@ -312,7 +312,7 @@ def forward(m, M):
     layers.solve1(d, k0, E0)
     # set the simulation domain
     N = M
-    D = [z_pos[0], z_pos[1]+30, 0, 0.5 * (z_pos[1] - z_pos[0])]
+    D = [z_pos[0], z_pos[1]+3, 0, 0.5 * (z_pos[1] - z_pos[0])]
     x = np.linspace(D[2], D[3], N)
     z = np.linspace(D[0], D[1], M)
     [X, Z] = np.meshgrid(x, z)
@@ -324,15 +324,15 @@ def forward(m, M):
 
 def jacobian(m_cur, eps):
     J_cur = np.zeros((M, N), dtype='float')
-    F_cur = forward(m_cur, M)
+    F_cur = d_obs - forward(m_cur, M)
     for j in range(N):
         m_nxt = m_cur.copy()
         m_nxt[j] += eps
-        F_nxt = forward(m_nxt, M)
+        F_nxt = d_obs - forward(m_nxt, M)
         # F_nxt_mean = np.mean(F_nxt)
         for i in range(M):
+            # J_cur[i][j] = (F_nxt[i] - F_cur[i]) / (m_nxt[j] - m_cur[j])
             J_cur[i][j] = (F_nxt[i] - F_cur[i]) / (m_nxt[j] - m_cur[j])
-            # J_cur[i][j] = (F_nxt[i] - F_cur[i]) / (m_nxt[j] - m_cur[j]) * (m_cur[j]/F_cur[i])
     return J_cur
 
 # M is the dimension of observed data.
@@ -341,15 +341,15 @@ M = 16
 N = 6
 
 # Generate real data from forward model.
-m_gt = np.array([1, 1, 1, 1.04, 1, 1])
+m_gt = np.array([1, 1.8, 1, 1.6, 2, 1])
 d_obs = forward(m_gt, M)
 
 # Initialize a vector of model parameters.
 W = np.identity(M)
-m = np.ones(N, dtype='float') * 1
+m0 = np.ones(N, dtype='float') * 2
 # m = np.array([1.2222, 1, 1, 1.992, 1, 1]) * 1.0
-eps = 0.0001
-
+eps = 0.000001
+m = m0.copy()
 
 # Create inverse model.
 rms = 100
@@ -357,8 +357,8 @@ loss = [1]
 num = 0
 # while num < 20:
 while num < 20:
-    d = forward(m, M)
-    J = jacobian(m, eps)
+    d = d_obs - forward(m, M)
+    J = jacobian(m, eps)    # Jacobian for misfit matrix.
     dm = np.dot(np.dot(np.linalg.inv(np.dot(J.T, J)), J.T), d)
     # dm = np.dot(np.dot(np.linalg.inv(np.dot(J, J.T)), J), d)
     # dm = np.dot(np.linalg.inv(J), d)
@@ -367,11 +367,26 @@ while num < 20:
     # plt.plot(m)
     # plt.show()
     num += 1
-print(m)
-print(num)
+    print("# of iteration: " + str(num) + ".")
+    print("The current model parameters vector: " + str(m) + ".")
+
+x_0 = np.linspace(-10, 5, N).tolist()
+y_0 = m_gt.tolist()
+y_m = m.tolist()
+for i in range(N-1):
+    x_0.insert(2*i+1, x_0[2*i+1])
+    y_0.insert(2*i, y_0[2*i])
+    y_m.insert(2*i, y_m[2*i])
 print("Loss: " + str(d_obs- forward(m,M)) + ".")
 plt.plot(loss)
 plt.title("Loss")
+plt.show()
+plt.figure()
+plt.plot(x_0, y_0, 'b-')
+plt.plot(x_0, y_m, 'r--')
+plt.xlabel("depths in z axis")
+plt.ylabel("refractive index")
+plt.title("Guess for model parameters")
 plt.show()
 
 
